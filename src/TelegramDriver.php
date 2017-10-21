@@ -210,13 +210,25 @@ class TelegramDriver extends HttpDriver
      */
     private function convertQuestion(Question $question)
     {
-        $replies = Collection::make($question->getButtons())->map(function ($button) {
-            return [
-                array_merge([
+        function isAssoc(array $arr) {
+            return array_keys($arr) !== range(0, count($arr) - 1);
+        }
+
+        $prepare = function () {
+            return function (array $button) {
+                return array_merge([
                     'text' => (string) $button['text'],
                     'callback_data' => (string) $button['value'],
-                ], $button['additional']),
-            ];
+                ], $button['additional']);
+            };
+        };
+
+        $replies = Collection::make($question->getButtons())->map(function ($button) use ($prepare) {
+            if (isAssoc($button)) {
+                return [ $prepare()($button) ];
+            }
+
+            return array_map($prepare(), $button);
         });
 
         return $replies->toArray();
@@ -259,8 +271,11 @@ class TelegramDriver extends HttpDriver
          */
         if ($message instanceof Question) {
             $parameters['text'] = $message->getText();
+            $key = isset($additionalParameters['keyboard']) && $additionalParameters['keyboard'] === 'standard' ?
+                'keyboard' : 'inline_keyboard';
+
             $parameters['reply_markup'] = json_encode([
-                'inline_keyboard' => $this->convertQuestion($message),
+                $key => $this->convertQuestion($message),
             ], true);
         } elseif ($message instanceof OutgoingMessage) {
             if ($message->getAttachment() !== null) {
